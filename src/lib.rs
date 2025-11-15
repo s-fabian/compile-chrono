@@ -1,8 +1,8 @@
 //! This crate provides macros for getting compile time information.
 //!
 //! You can get the compile time either as
-//! [`time::Date`](time::Date), [`time::Time`](time::Time),
-//! [`time::OffsetDateTime`](time::OffsetDateTime), string, or UNIX timestamp.
+//! [`chrono::NaiveDate`](chrono::NaiveDate), [`chrono::NaiveTime`](chrono::NaiveTime),
+//! [`chrono::DateTime<Utc>`](chrono::DateTime), string, or UNIX timestamp.
 //!
 //! You can get the Rust compiler version either as
 //! [`semver::Version`](semver::Version) or string,
@@ -19,20 +19,22 @@
 
 extern crate proc_macro;
 
+use chrono::{DateTime, Datelike, Timelike, Utc};
 use once_cell::sync::Lazy;
 use proc_macro::TokenStream;
-use quote::{format_ident, quote, ToTokens};
-use time::{macros::format_description, OffsetDateTime};
+use quote::{quote, ToTokens};
 
-static COMPILE_TIME: Lazy<OffsetDateTime> = Lazy::new(OffsetDateTime::now_utc);
+static COMPILE_TIME: Lazy<DateTime<Utc>> = Lazy::new(Utc::now);
 static RUSTC_VERSION: Lazy<rustc_version::Result<rustc_version::Version>> = Lazy::new(rustc_version::version);
 
-/// Compile date as `time::Date`.
+/// Compile date as `chrono::NaiveDate`.
 ///
 /// # Example
 ///
 /// ```
-/// const COMPILE_DATE: time::Date = compile_time::date!();
+/// # use chrono::Datelike;
+///
+/// const COMPILE_DATE: chrono::NaiveDate = compile_time::date!();
 ///
 /// let year = COMPILE_DATE.year();
 /// let month = COMPILE_DATE.month();
@@ -41,15 +43,15 @@ static RUSTC_VERSION: Lazy<rustc_version::Result<rustc_version::Version>> = Lazy
 /// ```
 #[proc_macro]
 pub fn date(_item: TokenStream) -> TokenStream {
-  let date = COMPILE_TIME.date();
+  let date = COMPILE_TIME.date_naive();
 
   let year = date.year();
-  let month = format_ident!("{}", format!("{:?}", date.month()));
+  let month = date.month();
   let day = date.day();
 
   quote! {
-    match ::time::Date::from_calendar_date(#year, ::time::Month::#month, #day) {
-      Ok(date) => date,
+    match ::chrono::NaiveDate::from_ymd_opt(#year, #month, #day) {
+      Some(date) => date,
       _ => ::core::unreachable!(),
     }
   }
@@ -61,10 +63,12 @@ pub fn date(_item: TokenStream) -> TokenStream {
 /// # Example
 ///
 /// ```
-/// const COMPILE_DATE: time::Date = compile_time::date!();
+/// # use chrono::Datelike;
+///
+/// const COMPILE_DATE: chrono::NaiveDate = compile_time::date!();
 ///
 /// let year = COMPILE_DATE.year();
-/// let month: u8 = COMPILE_DATE.month().into();
+/// let month = COMPILE_DATE.month();
 /// let day = COMPILE_DATE.day();
 /// let date_string = format!("{year:04}-{month:02}-{day:02}");
 ///
@@ -72,20 +76,21 @@ pub fn date(_item: TokenStream) -> TokenStream {
 /// ```
 #[proc_macro]
 pub fn date_str(_item: TokenStream) -> TokenStream {
-  let date = COMPILE_TIME.date();
+  let date = COMPILE_TIME.date_naive();
 
-  let fmt = format_description!("[year]-[month]-[day]");
-  let date_str = date.format(&fmt).unwrap();
+  let date_str = date.format("%Y-%m-%d").to_string();
 
   quote! { #date_str }.into()
 }
 
-/// Compile time as `time::Time`.
+/// Compile time as `chrono::NaiveTime`.
 ///
 /// # Example
 ///
 /// ```
-/// const COMPILE_TIME: time::Time = compile_time::time!();
+/// # use chrono::Timelike;
+///
+/// const COMPILE_TIME: chrono::NaiveTime = compile_time::time!();
 ///
 /// let hour = COMPILE_TIME.hour();
 /// let minute = COMPILE_TIME.minute();
@@ -101,8 +106,8 @@ pub fn time(_item: TokenStream) -> TokenStream {
   let second = time.second();
 
   quote! {
-    match ::time::Time::from_hms(#hour, #minute, #second) {
-      Ok(time) => time,
+    match ::chrono::NaiveTime::from_hms_opt(#hour, #minute, #second) {
+      Some(time) => time,
       _ => ::core::unreachable!(),
     }
   }
@@ -114,7 +119,9 @@ pub fn time(_item: TokenStream) -> TokenStream {
 /// # Example
 ///
 /// ```
-/// const COMPILE_TIME: time::Time = compile_time::time!();
+/// # use chrono::Timelike;
+///
+/// const COMPILE_TIME: chrono::NaiveTime = compile_time::time!();
 ///
 /// let hour = COMPILE_TIME.hour();
 /// let minute = COMPILE_TIME.minute();
@@ -127,18 +134,19 @@ pub fn time(_item: TokenStream) -> TokenStream {
 pub fn time_str(_item: TokenStream) -> TokenStream {
   let time = COMPILE_TIME.time();
 
-  let fmt = format_description!("[hour]:[minute]:[second]");
-  let time_str = time.format(&fmt).unwrap();
+  let time_str = time.format("%H:%M:%S").to_string();
 
   quote! { #time_str }.into()
 }
 
-/// Compile date and time as `time::OffsetDateTime`.
+/// Compile date and time as `chrono::DateTime<chrono::Utc>`.
 ///
 /// # Example
 ///
 /// ```
-/// const COMPILE_DATETIME: time::OffsetDateTime = compile_time::datetime!();
+/// # use chrono::{Datelike, Timelike};
+///
+/// const COMPILE_DATETIME: chrono::DateTime<chrono::Utc> = compile_time::datetime!();
 ///
 /// let year = COMPILE_DATETIME.year();
 /// let month = COMPILE_DATETIME.month();
@@ -153,8 +161,8 @@ pub fn time_str(_item: TokenStream) -> TokenStream {
 /// # assert_eq!(COMPILE_DATETIME, compile_time::datetime!());
 /// #
 /// # // Additional sanity check.
-/// # let now = time::OffsetDateTime::now_utc();
-/// # let yesterday = now.saturating_sub(time::Duration::days(1));
+/// # let now = chrono::Utc::now();
+/// # let yesterday = now - chrono::Duration::days(1);
 /// # assert!(COMPILE_DATETIME > yesterday);
 /// # assert!(COMPILE_DATETIME < now);
 /// ```
@@ -163,7 +171,7 @@ pub fn datetime(_item: TokenStream) -> TokenStream {
   let datetime = *COMPILE_TIME;
 
   let year = datetime.year();
-  let month = format_ident!("{}", format!("{:?}", datetime.month()));
+  let month = datetime.month();
   let day = datetime.day();
 
   let hour = datetime.hour();
@@ -171,21 +179,23 @@ pub fn datetime(_item: TokenStream) -> TokenStream {
   let second = datetime.second();
 
   let date = quote! {
-    match ::time::Date::from_calendar_date(#year, ::time::Month::#month, #day) {
-      Ok(date) => date,
+    match ::chrono::NaiveDate::from_ymd_opt(#year, #month, #day) {
+      Some(date) => date,
       _ => ::core::unreachable!(),
     }
   };
 
   let time = quote! {
-    match ::time::Time::from_hms(#hour, #minute, #second) {
-      Ok(time) => time,
+    match ::chrono::NaiveTime::from_hms_opt(#hour, #minute, #second) {
+      Some(time) => time,
       _ => ::core::unreachable!(),
     }
   };
 
   quote! {
-    ::time::PrimitiveDateTime::new(#date, #time).assume_utc()
+    ::chrono::NaiveDateTime::new(
+      #date, #time
+    ).and_utc()
   }
   .into()
 }
@@ -205,8 +215,7 @@ pub fn datetime(_item: TokenStream) -> TokenStream {
 pub fn datetime_str(_item: TokenStream) -> TokenStream {
   let datetime = *COMPILE_TIME;
 
-  let fmt = format_description!("[year]-[month]-[day]T[hour]:[minute]:[second]Z");
-  let datetime_str = datetime.format(&fmt).unwrap();
+  let datetime_str = datetime.format("%Y-%m-%dT%H:%M:%SZ").to_string();
 
   quote! { #datetime_str }.into()
 }
@@ -216,15 +225,15 @@ pub fn datetime_str(_item: TokenStream) -> TokenStream {
 /// # Example
 ///
 /// ```
-/// const COMPILE_DATETIME: time::OffsetDateTime = compile_time::datetime!();
+/// const COMPILE_DATETIME: chrono::DateTime<chrono::Utc> = compile_time::datetime!();
 ///
-/// assert_eq!(compile_time::unix!(), COMPILE_DATETIME.unix_timestamp());
+/// assert_eq!(compile_time::unix!(), COMPILE_DATETIME.timestamp());
 /// ```
 #[proc_macro]
 pub fn unix(_item: TokenStream) -> TokenStream {
   let datetime = *COMPILE_TIME;
 
-  let unix_timestamp = proc_macro2::Literal::i64_unsuffixed(datetime.unix_timestamp());
+  let unix_timestamp = proc_macro2::Literal::i64_unsuffixed(datetime.timestamp());
 
   quote! {
     #unix_timestamp
